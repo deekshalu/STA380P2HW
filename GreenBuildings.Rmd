@@ -1,0 +1,290 @@
+---
+title: "GreenBuildings"
+author: "Sarah Stephens"
+date: "2024-08-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Visual story telling part 1: green buildings
+# Load libraries
+library(ggplot2)
+library(dplyr)
+library(mgcv)
+library(corrplot)
+library(car)
+```
+
+First, I cleaned the data by removing the buildings with low occupany——particularly, those with less than 10% occupancy. This is because these observations are outliers that could skew the data in a unhelpful way, making it harder to determine the real effects of opting for a green building.
+
+Let's do some exploratory data analysis
+
+```{r setup, echo=FALSE}
+# Drop low occupany buildings (outliers with less than 10% occupancy)
+greenbuildings <- greenbuildings %>%
+  filter(leasing_rate >= 10)
+
+# EDA
+summary(greenbuildings)
+
+# Correlation matrix
+correlation_matrix <- cor(greenbuildings %>% select_if(is.numeric), use = "complete.obs")
+
+# Visualize the correlation matrix
+library(corrplot)
+corrplot(correlation_matrix, method = "circle")
+```
+
+Here we see that there is a strong negative correlation between: 
+*Electricity costs & the number of heating degree days
+*Electricity costs & the total number of degree days (either heating or cooling)
+*Class B & Class A
+
+There are strong postive correlations between: 
+*Stories & size
+*Cluster rent & rent
+*Green rating & energy star
+*The number of heating degree days & the total number of degree days
+
+All of these correlations make intuitive sense, and the presence of multicollinearity between these predictors is something to keep in mind. 
+
+Now let's analyze information across both green and non-green groups to find patterns
+related to the general real estate market and the factors influencing annual rent.
+
+We already know that: The median market rent in the non-green buildings was $25
+per square foot per year, while the median market rent in the green buildings was
+27.60 dollars per square foot per year: about $2.60 more per square foot.
+
+# Building Info
+New 15-story mixed-use building on East Cesar Chavez, just across I-35 from downtown
+250,000 square feet. Making profit @ year 9 onward for about 30 years or more
+
+First, I want to check if green buildings are considered to be of top notch quality. I will do this using the "class" predictors.
+
+```{r setup, echo=FALSE}
+# Create Class C dummy variable that = 1 if Class A & Class B are BOTH = 0
+greenbuildings$class_c <- ifelse(greenbuildings$class_a == 0 & greenbuildings$class_b == 0, 1, 0)
+
+# Create matrix comparing proportions of Class A, B & C, grouped by green_rating
+class_matrix <- data %>%
+  group_by(green_rating) %>%
+  summarize(
+    class_a_count = sum(class_a),
+    class_b_count = sum(class_b),
+    class_c_count = sum(class_c),
+    total_count = n()
+  ) %>%
+  mutate(
+    class_a_proportion = round(class_a_count / total_count, 2),
+    class_b_proportion = round(class_b_count / total_count, 2),
+    class_c_proportion = round(class_c_count / total_count, 2)
+  ) %>%
+  select(green_rating, class_a_proportion, class_b_proportion, class_c_proportion)
+
+class_matrix <- as.matrix(class_matrix)
+
+class_matrix
+```
+
+The intuition is right--green buildings are, on average, better quality. We know this because out of all buildings, the proportion of buildings that fall into Class A category is much higher for green buildings. While only 36% of non-green buidlings are classified as Class A, 80% of green buildings are of utmost quality. Thus, the developer should understand that green buildings are not just marketed as being better quality; they are better quality on average. Green buildings should therefore have a longer lifespan, allowing for more opportunity to amass positive returns on the intitial investment. 
+
+Let's double check this by seeing if green buildings tend to require renovation. 
+
+```{r setup, echo=FALSE}
+# Create matrix comparing renovation rates for green and non-green buildings
+reno_matrix <- data %>%
+  group_by(green_rating) %>%
+  summarize(
+    renovated_count = sum(renovated),
+    total_count = n()
+  ) %>%
+  mutate(
+    renovated_proportion = round(renovated_count / total_count, 2)
+  ) %>%
+  select(green_rating, renovated_proportion)
+
+reno_matrix <- as.matrix(reno_matrix)
+
+reno_matrix
+```
+
+Yes, we were right. The proportion of green buildings that have historically been renovated is about half that of non-green buildings. Therefore, the developer shouldn't need to worry as much about spending more money down the line on renovation costs. But, the proportion is not zero——20% is still significant——so the possibility of renovation in the future should not be eliminated. Our analysis is looking at renovation rates from a comparative lens, meaning that the benefit of investing in a green building upfront is seen in the decrease in renovation likelihood. 
+
+Even though better quality and less renovation can lead to greater longevity, do these elements influence rent rates?
+
+I mutated the dataset to include one variable for class A, B, and C, where Class A = 1, Class B = 2, and Class C = 3. This was to make the matrix more interpretable.
+
+```{r setup, echo=FALSE}
+greenbuildings <- greenbuildings %>%
+  mutate(class = case_when(
+  class_a == 1 ~ 1,
+  class_b == 1 ~ 2,
+  class_c == 1 ~ 3,
+  ))
+
+# Create matrix comparing median rent between green rating and class (building quality)
+greenbuildings %>%
+  group_by(green_rating, class) %>%
+  summarize(
+    median_rent = median(Rent), count = n())
+```
+
+Median rent is higher for greenbuildings across the board. But, the median rent is only $0.2 higher across Class A buildings, suggesting that the increase in value for a higher quality building is not unique to sustainable buildings. Rather, buildings can use high-quality materials that are not sustainable and increase their rent prices.
+
+Thus, the importance of better quality buildings (observed more often in green architecture) is mainly the potential for them to be more durable and long-lasting, rather than higher value in terms of rent.
+
+But, what if we compare prices only among buildings with similar features to the one we are considering building? How would this impact our analysis?
+
+```{r setup, echo=FALSE}
+greenbuildings %>%
+  filter(
+    stories >= 10, stories <= 20, 
+    class==1, 
+    size >= 200000, size <= 300000) %>%
+  group_by(green_rating, class) %>%
+  summarize(
+    median_rent = median(Rent), count = n())
+```
+
+Here we find something very interesting. When we filter the dataset to include buildings that are...
+
+*Between 200,000 and 300,000 square feet
+*Between 10 and 20 stories
+*Class A
+
+...and group by class and green rating, we observe that the median rent is actually 1.10 dollars lower for green buildings than it is for non-green buildings. Thus, assuming that rent will be about $2.60 higher for this geren building based off median rent values is misleading, as it considers the entire dataset. The original advice given to the developer leaves out important information; namely, that when you narrow the scope of the data to look at buildings with similar features to the one we are considering building, the return on investment is actually worse than that of a non-green building.
+
+Let's continue our analysis by considering weather patterns in Austin. Given that the weather in Austin is over 100 degrees currently, we should analyze the impact of extreme heat on green buildings, given the high cost of cooling. I would estimate that 8/12 months of the year require considerable air conditioning to account for extreme heat from March through October. According to ClimateZone.com, there are on average 3,016 cooling degree days per year in Austin. Let's plot this. 
+
+https://www.climate-zone.com/climate/united-states/texas/austin/index_centigrade.html
+
+```{r setup, echo=FALSE}
+gam_model_cool <- gam(Rent ~ s(cd_total_07), data = greenbuildings)
+predicted_rent_cool <- predict(gam_model_cool, newdata = data.frame(cd_total_07 = 3016))
+
+ggplot(greenbuildings, aes(cd_total_07, Rent)) + 
+geom_smooth(method = 'gam', formula = y ~ s(x), se = TRUE) +
+geom_point(data = data.frame(cd_total_07 = 3016, Rent = predicted_rent_cool), aes(x = cd_total_07, y = Rent), color = 'green', size = 3) +
+labs(
+  title = 'Cooling Degree Days vs. Annual Rent',
+  x = 'Number of Cooling Degree Days (2007)',
+  y = 'Annual Rent by Sqft'
+)
+```
+
+Here we see that the rent for a building in Austin, where the number of cooling degree days is around 3000, is at the very low end of the range. This observation indicates a loss in value due to high energy costs during hot seasons. Now, let's do the same for annual heating degree days, which is an average of 1688 for Austin. 
+
+```{r setup, echo=FALSE}
+gam_model_heat <- gam(Rent ~ s(hd_total07), data = greenbuildings)
+predicted_rent_heat <- predict(gam_model_heat, newdata = data.frame(hd_total07 = 1688))
+
+ggplot(greenbuildings, aes(hd_total07, Rent)) + 
+geom_smooth(method = 'gam', formula = y ~ s(x), se = TRUE) + 
+geom_point(data = data.frame(hd_total07 = 1688, Rent = predicted_rent_heat), aes(x = hd_total07, y = Rent), color = 'green', size = 3) +
+labs(
+  title = 'Heating Degree Days vs. Annual Rent',
+  x = 'Number of Heating Degree Days (2007)',
+  y = 'Annual Rent by Sqft'
+)
+```
+
+The result is better here. While rent is still not at the high end, Austin experiences less extreme cold weather, so the financial impact is not unreasonable. What if we put cooling and heating degree days together? 
+
+```{r setup, echo=FALSE}
+gam_model_total <- gam(Rent ~ s(total_dd_07), data = greenbuildings)
+predicted_rent_total <- predict(gam_model_total, newdata = data.frame(total_dd_07 = 4704))
+
+ggplot(greenbuildings, aes(total_dd_07, Rent)) + 
+geom_smooth(method = 'gam', formula = y ~ s(x), se = TRUE) +
+geom_point(data = data.frame(total_dd_07 = 4704, Rent = predicted_rent_total), aes(x = total_dd_07, y = Rent), color = 'green', size = 3) +
+labs(
+  title = 'Total Degree Days vs. Annual Rent',
+  x = 'Total Number of Cooling & Heating Degree Days (2007)',
+  y = 'Annual Rent by Sqft'
+)
+```
+
+This graph shows us that because of Austin's weather——and the resulting amount of days it needs to spend energy accomodating to such weather——the annual rent charged to tenants is relatively low compared to other places. What about precipitation? The average annual amount in inches for Austin is 31.9. 
+
+```{r setup, echo=FALSE}
+gam_model_precip <- gam(Rent ~ s(Precipitation), data = greenbuildings)
+predicted_rent_precip <- predict(gam_model_precip, newdata = data.frame(Precipitation = 31.9))
+
+ggplot(greenbuildings, aes(Precipitation, Rent)) + 
+geom_smooth(method = 'gam', formula = y ~ s(x), se = TRUE) +
+geom_point(data = data.frame(Precipitation = 31.9, Rent = predicted_rent_precip), aes(x = Precipitation, y = Rent), color = 'green', size = 3) +
+labs(
+  title = 'Precipitation vs. Annual Rent',
+  x = 'Annual Precipitation (in)',
+  y = 'Annual Rent by Sqft'
+)
+```
+
+The relationship between annual precipitation and rent is very variable. The value for Austin lies around the low/middle range. But, I wouldn't consider this factor to be very important, because (anecdotally speaking) Austin doesn't get very much rain and thus the threat to the building's infrastructure should not be substantial. 
+
+
+```{r setup, echo=FALSE}
+# Plot size vs. rent
+gam_model_size <- gam(Rent ~ s(size), data = greenbuildings)
+predicted_rent_size <- predict(gam_model_size, newdata = data.frame(size = 250000))
+
+ggplot(greenbuildings, aes(size, Rent)) + 
+geom_smooth(method = 'gam', formula = y ~ s(x), se = TRUE) +
+geom_point(data = data.frame(size = 250000, Rent = predicted_rent_size), aes(x = size, y = Rent), color = 'green', size = 3) +
+labs(
+  title = 'Building size vs. Annual Rent',
+  x = 'Size in Sqft',
+  y = 'Annual Rent by Sqft'
+)
+```
+
+Here we observe that as size increases, annual rent also increases, as we would expect. There also appears to be a small peak towards the bottom left corner of the graph. Our building size is 250,000 square feet, which is right at the top of this small peak, indicating that this is a decently well sized building, but profits would increase exponentially if developers considered making it bigger. The trade-off of making the building larger, however, would include increased utility costs, maintenance costs, pressure to occupy the space, and more. 
+
+Additionally, the values over 1,000,000 square feet on the x-axis likely represent outliers——incredibly large buildings that are well beyond our investors' budget or desire. Thus, the building is reasonably sizes and any substantial increase in rent would only be seen above 1,000,000, which is unreasonable for our situation. 
+
+```{r setup, echo=FALSE}
+# Plot stories vs. rent
+gam_model_stories <- gam(Rent ~ s(stories), data = greenbuildings)
+predicted_rent_stories <- predict(gam_model_stories, newdata = data.frame(stories = 15))
+
+ggplot(greenbuildings, aes(stories, Rent)) + 
+geom_smooth(method = 'gam', formula = y ~ s(x), se = TRUE) +
+geom_point(data = data.frame(stories = 15, Rent = predicted_rent_stories), aes(x = stories, y = Rent), color = 'green', size = 3) +
+labs(
+  title = 'Building height vs. Annual Rent',
+  x = 'Number of Stories',
+  y = 'Annual Rent by Sqft',
+)
+```
+
+The relationship between building height and rent is variable, dipping up and down across the x-axis. Looking at the green point indicating our building's height of 15 stories, we see that it lies on one of three peaks in the graph, which looks promising for our building. This plot demonstrates a similar trend to the prior visualization of size and rent, for a substantial increase in rent would only be seen at heights above 60 stories. 
+
+The tallest building in Austin is The Independent, with 58 floors. We can assume that our investors aren't looking to build the tallest high-rise in Austin, and most tall buidlings in Austin are concentrated in downtown, not on the Eastside, so it wouldn't make sense to make our building any taller, nor would it substantially increase value.
+
+```{r setup, echo=FALSE}
+# Plot age vs. rent
+gam_model_age <- gam(Rent ~ s(age), data = greenbuildings)
+predicted_rent_age <- predict(gam_model_age, newdata = data.frame(age = c(0, 9)))
+
+ggplot(greenbuildings, aes(age, Rent)) + 
+geom_smooth(method = 'gam', formula = y ~ s(x), se = TRUE) +
+geom_point(data = data.frame(age = c(0, 9), Rent = predicted_rent_age), aes(x = age, y = Rent), color = 'green', size = 3) +
+labs(
+  title = 'Building Age vs. Annual Rent',
+  x = 'Age in Years',
+  y = 'Annual Rent by Sqft'
+)
+```
+
+There is an overall negative relationship between age and annual rent, as expected given the issues that tend to arise from renting older infrastructure. There are two points on this graph, one at age 0 and another at age 9. Now, our building would be brand new at first, but it only starts gaining profit at around 9 years old. The estimated lifespan of the building according to the information is 30 years or more. From the graph, we see a downward trend between the years of 0 and 30, but a rise from 30 to 55. Therefore, our building would need to consider the reality of aging infrastructure. But, as discovered before, green buildings might last longer due to their tendency to be of higher quality, which could account for this trend. 
+
+Because it's on the eastside, it will likely be worth less given historical real estate values in Austin. Given more data related to location, I would investigate how the eastern location impacts rent. 
+
+# In conclusion:
+Financially speaking, the revenue for a green building would be about $275,000 less per year than a non-green building (calculated using a cluster of buildings with similar features to the one we are considering).
+
+If we assume that rent will be around 31.80 dollars per square foot per year, then the total revenue would be 7,950,000 dollars per year. With construction costs being 100 million dollars and a 5% premium for green certification, the total upfront cost would be about $105,000,000. Thus, we would expect to pay off the initial investment in about 13 years, almost 5 years longer than originally estimated. If we assume the building to last 30 years or more, this translates to at least 135,150,000 dollars in profit. 
+
+If we assume that green buildings will last longer due to their higher quality standards and require less maintenance/renovation, we could potentially make up for these extra years in the long term. Additionally, if climate change progresses as we expect it to and Texas struggles to keep up with increasing energy demands, then investors can have some peace of mind that a green building will be less susceptible to market risk. 
+
+Thus, investing in a green building might result in less returns short-term, but there are still reasons to invest. The decision of whether or not to construct a green building is ultimately a moral choice. If investors focus on the long-term, they will see the benefit of committing to a green building that will make for good PR, be more durable, and have less impact on the environment. Another thing to consider would be tax write offs for having a green building. While we don't have this data now, such considerations should be part of the decision-making process for this investment. While understanding the financial implications is important, we recommend that investors consider the bigger picutre, keeping in mind the benefits of supporting green infrastructure to their own business and moral identity.
