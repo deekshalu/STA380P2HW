@@ -1,3 +1,3 @@
 STA230 P2 Take Home Assignment 
 
-Please refer to the group member doc to see names of our group!
+Group Members: Deeksha Reddy Koonadi (drk2338), Sonali Hornick (ssh2643), Sarah Stephens (sgs2623), and Kimble Horsak ( )
