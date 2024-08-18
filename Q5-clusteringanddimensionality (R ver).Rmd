@@ -1,0 +1,280 @@
+---
+title: "Clustering&Dimensionality"
+author: ' '
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(tidyr)
+library(corrplot)
+library(dbscan)
+library(Rtsne)
+```
+
+## Clustering and dimensionality reduction 
+
+The data in wine.csv contains information on 11 chemical properties of 6500 different bottles of vinho verde wine from northern Portugal. In addition, two other variables about each wine are recorded: \newline
+
+- whether the wine is red or white \newline
+- the quality of the wine, as judged on a 1-10 scale by a panel of certified wine snobs. \newline
+
+**Objective) Run PCA, tSNE, and any clustering algorithm of your choice on the 11 chemical properties (or suitable transformations thereof) and summarize your results. Which dimensionality reduction technique makes the most sense to you for this data? Convince yourself (and me) that your chosen approach is easily capable of distinguishing the reds from the whites, using only the "unsupervised" information contained in the data on chemical properties. Does your unsupervised technique also seem capable of distinguishing the higher from the lower quality wines? Present appropriate numerical and/or visual evidence to support your conclusions.** \newline
+
+To clarify: I'm not asking you to run a supervised learning algorithms. Rather, I'm asking you to see whether the differences in the labels (red/white and quality score) emerge naturally from applying an unsupervised technique to the chemical properties. This should be straightforward to assess using plots. \newline
+
+
+```{r, echo=FALSE}
+wine = read.csv('wine.csv')
+head(wine, n=5)
+wine = unique(wine)
+
+
+chemical_data <- select(wine, -color, -quality) # only considers the chemical features 
+chemical_data
+scaled_data <- scale(chemical_data)
+
+duplicate_rows = duplicated(scaled_data) | duplicated(scaled_data, fromLast = TRUE)
+scaled_data = scaled_data[!duplicate_rows, ]
+wine = wine[!duplicate_rows, ]
+
+pca_result = prcomp(scaled_data, scale=TRUE)
+
+
+```
+
+
+
+### By Color \newline
+
+
+**PCA Model**
+```{r wine_pca, echo=FALSE}
+pca_color = data.frame(PC1 = pca_result$x[, 1], PC2 = pca_result$x[, 2], color = wine$color)
+ggplot(pca_color, aes(x = PC1, y = PC2, color = color)) +
+  geom_point() +
+  labs(title = "PCA Visualization by Color", x = "Principal Component 1", y = "Principal Component 2") +
+  scale_color_manual(values = c("white" = "lemonchiffon3", "red" = "red4"))+
+  # scale_y_reverse(limits = c(10, -5)) + 
+  theme_minimal()
+
+set.seed(200) 
+K <- 2
+kmeansPCAResultColor = kmeans(pca_color[, 1:2], centers = K, nstart = 20)
+pca_color$clusterColor = as.factor(kmeansPCAResultColor$cluster)
+
+ggplot(pca_color, aes(x = PC1, y = PC2, color = clusterColor)) +
+  geom_point() +
+  labs(title = "PCA Visualization with K Means Clusters for Color", x = "Principal Component 1", y = "Principal Component 2") +
+  scale_color_manual(values = c("1" = "salmon", "2" = "seagreen"))+
+  theme_minimal()
+
+
+
+
+```
+
+**tSNE Model**
+```{r wine_tSNE, echo=FALSE}
+tsne_result = Rtsne(scaled_data, dims = 2)
+tsne_data = data.frame(TSNE_1 = tsne_result$Y[, 1], TSNE_2 = tsne_result$Y[, 2], color = wine$color)
+
+ggplot(tsne_data, aes(x = TSNE_1, y = TSNE_2, color = color)) +
+  geom_point() +
+  labs(title = "t-SNE Visualization by Color", x = "t-SNE Dimension 1", y = "t-SNE Dimension 2") +
+  scale_color_manual(values = c("white" = "mistyrose", "red" = "rosybrown"))+
+  theme_minimal()
+
+# plotting the elbow chart to determine the optimal k value 
+k_values <- 1:15
+wss <- numeric(length(k_values))
+
+
+for (k in k_values) {
+  kmeans_result <- kmeans(tsne_data[, c("TSNE_1", "TSNE_2")], centers = k, nstart = 25)
+  wss[k] <- sum(kmeans_result$withinss)
+}
+
+
+set.seed(200)  
+k <- 3  
+kmeans_result <- kmeans(tsne_data[, c("TSNE_1", "TSNE_2")], centers = k, nstart = 25)
+
+
+elbow_data <- data.frame(k = k_values, WSS = wss)
+
+ggplot(elbow_data, aes(x = k, y = WSS)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Elbow Method for Optimal k",
+       x = "Number of Clusters (k)",
+       y = "Within-cluster Sum of Squares (WSS)") +
+  theme_minimal()
+
+
+
+# Add the cluster assignments to the tsne_data data frame from the optimal K
+set.seed(200)
+k <- 2
+kmeans_result <- kmeans(tsne_data[, c("TSNE_1", "TSNE_2")], centers = k, nstart = 25)
+
+tsne_data$Cluster <- as.factor(kmeans_result$cluster)
+
+# Plot the t-SNE results colored by the k-means clusters
+ggplot(tsne_data, aes(x = TSNE_1, y = TSNE_2, color = Cluster)) +
+  geom_point(size = 2) +
+  labs(title = paste("t-SNE Visualization with", k, "K-Means Clusters"),
+       x = "t-SNE Dimension 1", y = "t-SNE Dimension 2",
+       color = "Cluster") +
+  scale_color_manual(values = RColorBrewer::brewer.pal(n = k, name = "PuBu")) +
+  theme_minimal()
+
+
+
+
+
+
+
+
+
+```
+
+**Clustering Algorithms** \newline
+
+*K MEANS*
+```{r km, echo=FALSE}
+wss <- (nrow(scaled_data) - 1) * sum(apply(scaled_data, 2, var))
+for (i in 1:11) {
+  wss[i] <- sum(kmeans(scaled_data, centers = i)$withinss)
+}
+
+
+plot(1:11, wss, type = "b", xlab = "Number of clusters", ylab = "Within-cluster sum of squares")
+
+
+set.seed(123)
+data <- rbind(matrix(rnorm(50), nc = 2), matrix(rnorm(50, mean = 3), nc = 2))
+
+
+k <- 6  # Number of optimal clusters determined from elbow graph
+kmeans_result <- kmeans(data, centers = k, nstart = 25)
+
+# Print results
+print(kmeans_result$cluster)  
+print(kmeans_result$centers)  
+
+# Plot results
+plot(data, col = kmeans_result$cluster, pch = 19, main = "K-Means Clustering")
+points(kmeans_result$centers, col = 1:k, pch = 8, cex = 2)
+
+
+
+```
+
+**DBSCAN**
+```{r dbscan, echo=FALSE}
+set.seed(123)
+data <- rbind(matrix(rnorm(50), nc = 2), matrix(rnorm(50, mean = 3), nc = 2))
+
+
+eps <- 0.5  # Maximum distance between points
+minPts <- 5  # Minimum number of points to form a cluster
+dbscan_result <- dbscan(data, eps = eps, minPts = minPts)
+
+# Plot results
+plot(data, col = dbscan_result$cluster + 1, pch = 19, main = "DBSCAN Clustering")
+
+
+```
+
+
+
+### By Quality \newline
+
+
+**PCA**
+```{r pcaq, echo=FALSE}
+pca_quality = data.frame(PC1 = pca_result$x[, 1], PC2 = pca_result$x[, 2], quality = wine$quality)
+ggplot(pca_quality, aes(x = PC1, y = PC2, color = quality)) +
+  geom_point() +
+  labs(title = "PCA Visualization by quality", x = "Principal Component 1", y = "Principal Component 2") +
+  theme_minimal()
+
+
+k_values <- 1:15
+wss <- numeric(length(k_values))
+
+
+for (k in k_values) {
+  kmeans_result <- kmeans(pca_quality, centers = k, nstart = 25)
+  wss[k] <- sum(kmeans_result$withinss)
+}
+
+
+ggplot(data.frame(k = k_values, WSS = wss), aes(x = k, y = WSS)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Elbow Method for Optimal k",
+       x = "Number of Clusters (k)",
+       y = "Within-cluster Sum of Squares (WSS)") +
+  theme_minimal()
+
+
+
+
+k <- 4  # Number of clusters, adjust as needed
+kmeans_result <- kmeans(pca_quality, centers = k, nstart = 25)
+
+# Add cluster assignments to PCA scores
+pca_quality_df <- as.data.frame(pca_quality)
+pca_quality_df$Cluster <- factor(kmeans_result$cluster)
+
+# Plot PCA results colored by k-Means clusters
+ggplot(pca_quality_df, aes(x = PC1, y = PC2, color = Cluster)) +
+  geom_point(size = 2) +
+  scale_color_manual(values = RColorBrewer::brewer.pal(n = k, name = "Set2")) +
+  labs(title = paste("K-Means Clustering with", k, "Clusters"),
+       x = "Principal Component 1",
+       y = "Principal Component 2",
+       color = "Cluster") +
+  theme_minimal()
+```
+The points of different colors are not well-separate in this model thereby suggesting that the chemical features are not good features to use when predicting wine quality. From the elbow graph, we estimated that the optimal number of clusters would be 4 clusters. 
+
+```{r tsnq, echo=FALSE}
+tsne_result = Rtsne(scaled_data, dims = 2)
+tsne_data = data.frame(TSNE_1 = tsne_result$Y[, 1], TSNE_2 = tsne_result$Y[, 2], quality = factor(wine$quality))
+
+ggplot(tsne_data, aes(x = TSNE_1, y = TSNE_2, color = quality)) +
+  geom_point(size = 2) +
+  labs(title = "t-SNE Visualization by Wine Quality", 
+       x = "t-SNE Dimension 1", 
+       y = "t-SNE Dimension 2", 
+       color = "Wine Quality") +
+  scale_color_viridis_d() +  # Using a color palette suitable for discrete values
+  theme_minimal()
+
+# using the same cluster number from the previous elbow graph, k = 4
+kmeans_result <- kmeans(tsne_data, centers = 4, nstart = 25)
+tsne_data$Cluster <- factor(kmeans_result$cluster)
+ggplot(tsne_data, aes(x = TSNE_1, y = TSNE_2, color = Cluster)) +
+  geom_point(size = 2) +
+  scale_color_manual(values = RColorBrewer::brewer.pal(n = k, name = "Set3")) +
+  labs(title = paste("t-SNE Visualization with k-Means Clustering (k =", k, ")"), 
+       x = "t-SNE Dimension 1", 
+       y = "t-SNE Dimension 2", 
+       color = "Cluster") +
+  theme_minimal()
+
+```
+
